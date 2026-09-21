@@ -1,0 +1,92 @@
+name: Test and publish container images
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e '.[test]'
+      - run: python -m unittest discover -s tests -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test tests/web.test.js
+      - run: docker network create bot-network
+      - run: HOME_DASHBOARD_RECIPE_TOKEN=ci-validation-token-1234567890 docker compose build
+      - run: python tests/smoke_docker.py
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: api-metadata
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/home-dashboard-api
+          tags: |
+            type=sha
+      - uses: docker/build-push-action@v6
+        id: api-build
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.api-metadata.outputs.tags }}
+          labels: ${{ steps.api-metadata.outputs.labels }}
+      - uses: docker/metadata-action@v5
+        id: web-metadata
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/home-dashboard-web
+          tags: |
+            type=sha
+      - uses: docker/build-push-action@v6
+        id: web-build
+        with:
+          context: ./web
+          push: true
+          platforms: linux/arm64
+          tags: ${{ steps.web-metadata.outputs.tags }}
+          labels: ${{ steps.web-metadata.outputs.labels }}
+      - name: Promote current main images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          API_IMAGE: ${{ fromJSON(steps.api-metadata.outputs.json).tags[0] }}
+          API_DIGEST: ${{ steps.api-build.outputs.digest }}
+          WEB_IMAGE: ${{ fromJSON(steps.web-metadata.outputs.json).tags[0] }}
+          WEB_DIGEST: ${{ steps.web-build.outputs.digest }}
+        run: |
+          current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$current_sha" = "$GITHUB_SHA" ]; then
+            api_repository=${API_IMAGE%:*}
+            web_repository=${WEB_IMAGE%:*}
+            docker buildx imagetools create \
+              --tag "$api_repository:latest" \
+              --tag "$api_repository:main" \
+              "$api_repository@$API_DIGEST"
+            docker buildx imagetools create \
+              --tag "$web_repository:latest" \
+              --tag "$web_repository:main" \
+              "$web_repository@$WEB_DIGEST"
+          fi

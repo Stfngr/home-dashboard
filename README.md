@@ -1,5 +1,7 @@
 # Home Dashboard
 
+[English below](#english)
+
 Eigenständige Website für den aktuellen Zustand deiner Bots. FastAPI speichert
 pro `(source, key)` nur den neuesten Zustand in SQLite. Caddy liefert eine
 responsive HTML/CSS/JS-Website aus. Das ausgewählte Rezept bleibt auch nach
@@ -11,9 +13,22 @@ weitere Bereiche der Website ergänzen.
 
 ## Auf dem Raspberry Pi starten
 
-Voraussetzungen: Docker Engine mit Compose-Plugin, Internetzugang für den ersten
-Build. Die Images unterstützen ARM64. Projektordner auf den Pi übertragen und
-die folgenden Befehle im Verzeichnis `home-dashboard` ausführen.
+Voraussetzungen: Docker Engine mit Compose-Plugin. Veröffentlicht werden ARM64-
+Images für Raspberry Pi; lokales Bauen bleibt für Entwicklung möglich. Nach
+jedem Push auf `main` prüft GitHub Actions API, Website und Docker-Integration
+und veröffentlicht beide Container:
+
+```text
+ghcr.io/stfngr/home-dashboard-api:latest
+ghcr.io/stfngr/home-dashboard-api:main
+ghcr.io/stfngr/home-dashboard-api:sha-<commit>
+ghcr.io/stfngr/home-dashboard-web:latest
+ghcr.io/stfngr/home-dashboard-web:main
+ghcr.io/stfngr/home-dashboard-web:sha-<commit>
+```
+
+Nach dem ersten Workflow-Lauf in GitHub unter **Packages** beide Packages auf
+**Public** setzen. Sonst benötigt der Pi GitHub-Zugangsdaten zum Pullen.
 
 ```bash
 cp .env.example .env
@@ -24,13 +39,20 @@ python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 Den generierten Token als `HOME_DASHBOARD_RECIPE_TOKEN` in `.env` eintragen.
 `HOME_DASHBOARD_PORT` ist standardmäßig `80`; wenn belegt, z. B. `8080` verwenden.
 
-Gemeinsames Netzwerk einmal anlegen, dann starten:
+Gemeinsames Netzwerk einmal anlegen, dann veröffentlichte Images starten:
 
 ```bash
 docker network inspect bot-network >/dev/null 2>&1 || docker network create bot-network
+docker compose -f compose.yml -f compose.production.yml pull
+docker compose -f compose.yml -f compose.production.yml up -d
+docker compose -f compose.yml -f compose.production.yml ps
+docker compose -f compose.yml -f compose.production.yml logs --tail=100
+```
+
+Lokal entwickeln oder vor dem ersten CI-Image bauen:
+
+```bash
 docker compose up -d --build
-docker compose ps
-docker compose logs --tail=100
 ```
 
 Website öffnen: `http://<pi-ip>/`, bei anderem Port `http://<pi-ip>:8080/`.
@@ -41,6 +63,28 @@ im Docker-Netzwerk und benötigen einen Bot-Token.
 Für den Heimnetzbetrieb keine Router-Portweiterleitung einrichten. Bei späterem
 externem Zugriff HTTPS und Zugriffsrechte für das Dashboard ergänzen. Bilder
 werden vom Browser direkt von der jeweiligen Rezeptquelle geladen.
+
+### Aktualisieren und Rollback
+
+Ein Update lädt beide neuesten Images und erstellt Container bei Bedarf neu;
+SQLite-Volume und Docker-Netzwerk bleiben erhalten:
+
+```bash
+docker compose -f compose.yml -f compose.production.yml pull
+docker compose -f compose.yml -f compose.production.yml up -d
+```
+
+Für ein gezieltes Rollback dieselbe SHA-Version für API und Website verwenden:
+
+```bash
+HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
+  docker compose -f compose.yml -f compose.production.yml up -d
+```
+
+`latest` und `main` werden nur vom Build aktualisiert, dessen Commit beim
+abschließenden CI-Check noch `main` entspricht. Ältere Workflow-Läufe erzeugen
+allenfalls ihren unveränderlichen SHA-Tag. API und Website immer mit demselben
+Tag ausrollen.
 
 ## Recipe Bot verbinden
 
@@ -151,3 +195,197 @@ Website-Dateien liegen in `web/`. Kein Node-Build und keine externen
 JavaScript-Abhängigkeiten erforderlich. Node wird nur für UI-Logiktests benutzt.
 Die API-Tests prüfen Authentifizierung, Isolation, Persistenz, parallele und
 verspätete Updates; UI-Tests prüfen Leerzustand, Polling und Fehlerverhalten.
+
+## English
+
+Independent website for current bot state. FastAPI stores only the latest state
+for each `(source, key)` in SQLite. Caddy serves responsive HTML, CSS, and
+JavaScript. The selected recipe remains visible past midnight. The browser polls
+for changes every 15 seconds.
+
+This project does not depend on RecipesAgent files, Python modules, or Telegram.
+Additional bots can use the same API; their views can be added to the website
+later.
+
+### Start On Raspberry Pi
+
+Requires Docker Engine with the Compose plugin. Published ARM64 images support
+Raspberry Pi; local builds remain available for development. Each push to `main`
+runs API, UI, and Docker integration checks in GitHub Actions, then publishes:
+
+```text
+ghcr.io/stfngr/home-dashboard-api:latest
+ghcr.io/stfngr/home-dashboard-api:main
+ghcr.io/stfngr/home-dashboard-api:sha-<commit>
+ghcr.io/stfngr/home-dashboard-web:latest
+ghcr.io/stfngr/home-dashboard-web:main
+ghcr.io/stfngr/home-dashboard-web:sha-<commit>
+```
+
+After the first workflow run, open both GitHub **Packages** pages and make the
+packages **Public**, otherwise the Pi needs GitHub credentials to pull them.
+
+Copy the project folder to the Pi, then run these commands in `home-dashboard`:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+Put the generated value into `HOME_DASHBOARD_RECIPE_TOKEN` in `.env`.
+`HOME_DASHBOARD_PORT` defaults to `80`; choose e.g. `8080` if occupied.
+
+Create shared Docker network once, then start published images:
+
+```bash
+docker network inspect bot-network >/dev/null 2>&1 || docker network create bot-network
+docker compose -f compose.yml -f compose.production.yml pull
+docker compose -f compose.yml -f compose.production.yml up -d
+docker compose -f compose.yml -f compose.production.yml ps
+docker compose -f compose.yml -f compose.production.yml logs --tail=100
+```
+
+For local development or a local build before first CI images exist:
+
+```bash
+docker compose up -d --build
+```
+
+Open `http://<pi-ip>/`, or `http://<pi-ip>:8080/` with another port. Only the
+web port is published. Caddy allows only read access under `/api/*`. Writes go
+directly to `home-dashboard-api:8000` in the Docker network and need a bot token.
+
+Do not configure router port forwarding for LAN use. Add HTTPS and access control
+before exposing the dashboard externally. Browsers load recipe images directly
+from each recipe source.
+
+### Update And Roll Back
+
+Update pulls both latest images and recreates containers as needed; the SQLite
+volume and Docker network remain intact:
+
+```bash
+docker compose -f compose.yml -f compose.production.yml pull
+docker compose -f compose.yml -f compose.production.yml up -d
+```
+
+For a targeted rollback, use the same immutable SHA tag for API and web:
+
+```bash
+HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
+  docker compose -f compose.yml -f compose.production.yml up -d
+```
+
+`latest` and `main` are promoted only by a build whose commit still matches
+`main` at the final CI check. Older workflow runs may publish their immutable
+SHA tag only. Always deploy API and web with the same tag.
+
+### Connect Recipe Bot
+
+Build or install the Recipe Bot version with dashboard support. Set these values
+in `/etc/recipe-bot/.env`:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_RECIPE_TOKEN"
+```
+
+Recreate the bot container with `--network bot-network` added to its existing
+`docker run` command, retaining the same configuration and state mounts. A
+restart alone does not reload changed `--env-file` values. Docker DNS resolves
+the dashboard hostname.
+
+The next manual or automatic selection sends a recipe snapshot. There is no
+backfill of prior selections. `!bot 0`, new menus, and leftovers Sundays do not
+replace the previously selected recipe. The bot persists pending updates and
+retries failures without blocking Telegram. A newer selection replaces an older
+pending update.
+
+### API Contract
+
+```text
+PUT /api/v1/state/{source}/{key}   Authorization: Bearer <token>
+GET /api/v1/state/{source}/{key}   public read-only on LAN
+GET /health                        internal health check
+```
+
+Names use lowercase letters, digits, and hyphens, up to 64 characters. Recipes
+use `recipe-bot/current-recipe`.
+
+```json
+{
+  "updated_at": "2026-09-21T08:13:22.000000+00:00",
+  "payload": {
+    "date": "2026-09-21",
+    "automatic": false,
+    "recipe": {
+      "id": 123,
+      "title": "Pasta Primavera",
+      "ingredients": ["200 g pasta", "vegetables"],
+      "instructions": ["Cook pasta.", "Combine with vegetables."],
+      "servings": 2,
+      "ready_minutes": 30,
+      "image_url": "https://example.com/recipe.jpg",
+      "source_url": "https://example.com/recipe"
+    }
+  }
+}
+```
+
+`updated_at` must contain a timezone. The API normalizes to UTC and atomically
+replaces stored state only for a newer timestamp. Equal or older updates return
+`200 {"applied": false}`; newer updates return `200 {"applied": true}`. The
+first update wins at equal timestamps. Synchronize bot clocks; timestamps define
+ordering.
+
+GET returns `source`, `key`, `updated_at`, and `payload`; it returns `404` before
+first state. Invalid requests return `400`, missing/invalid tokens `401`, and a
+valid token attempting another source `403`. Recipe payloads receive extra
+validation; other keys accept arbitrary serialized JSON objects up to 256 KB.
+
+To add bots, configure `HOME_DASHBOARD_TOKENS` for API with a JSON object such
+as `{ "source": "token" }`. Tokens must be unique ASCII strings of at least
+32 non-whitespace characters. Add e.g. `weather-bot` token from a separate
+environment variable. Never put tokens in website code.
+
+### Operations And Data
+
+```bash
+docker compose logs -f
+docker compose up -d --build
+docker compose stop
+docker compose start
+```
+
+SQLite lives in named volume `home-dashboard_dashboard-data` at
+`/data/dashboard.sqlite`. There is no history. The volume survives container
+recreation; `docker compose down -v` deletes data. For file backups, stop API
+and back up the complete volume including possible SQLite WAL files. Never share
+this volume with bots.
+
+### Develop And Test Locally
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[test]'
+.venv/bin/python -m unittest discover -s tests -v
+node --test tests/web.test.js
+```
+
+After `docker compose build`, `python3 tests/smoke_docker.py` validates actual
+containers including Caddy and persisted state. It creates and removes temporary
+containers, a network, and a volume.
+
+Start API locally (example development token only):
+
+```bash
+HOME_DASHBOARD_DB=./dashboard.sqlite \
+HOME_DASHBOARD_TOKENS='{"recipe-bot":"local-development-token-at-least-32-chars"}' \
+.venv/bin/uvicorn home_dashboard.api:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Website files are in `web/`. No Node build or external JavaScript dependencies
+are required. Node is used only for UI logic tests. API tests cover
+authentication, isolation, persistence, concurrent and delayed updates; UI tests
+cover empty state, polling, and failure behavior.

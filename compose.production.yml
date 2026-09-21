@@ -1,0 +1,7 @@
+services:
+  home-dashboard-api:
+    image: ghcr.io/stfngr/home-dashboard-api:${HOME_DASHBOARD_IMAGE_TAG:-latest}
+    build: !reset null
+  home-dashboard-web:
+    image: ghcr.io/stfngr/home-dashboard-web:${HOME_DASHBOARD_IMAGE_TAG:-latest}
+    build: !reset null
