@@ -7,10 +7,9 @@ Eigenständige Website für den aktuellen Zustand deiner Bots.
 ## Überblick
 
 FastAPI speichert pro `(source, key)` nur den neuesten Zustand in SQLite. Caddy
-liefert eine responsive HTML/CSS/JS-Website aus. Das ausgewählte Rezept bleibt
-über Mitternacht sichtbar. Der Browser fragt alle 15 Sekunden nach Änderungen.
-Weitere Bots können dieselbe API verwenden; ihre Anzeigen lassen sich später als
-weitere Bereiche ergänzen. Es gibt keine Abhängigkeit von RecipesAgent-Dateien,
+liefert eine responsive HTML/CSS/JS-Website aus. Tabs zeigen ausgewählte Rezepte
+und Haushaltsaufgaben; beide Zustände werden unabhängig alle 15 Sekunden geladen.
+Es gibt keine Abhängigkeit von RecipesAgent-Dateien,
 dessen Python-Modulen oder Telegram.
 
 Eine separate statische Demo läuft über GitHub Pages unter
@@ -36,12 +35,12 @@ einschließlich Caddy und Datenpersistenz.
 
 ## Konfiguration
 
-`.env` enthält `HOME_DASHBOARD_RECIPE_TOKEN`, optional `HOME_DASHBOARD_PORT` und
+`.env` enthält `HOME_DASHBOARD_RECIPE_TOKEN` und `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT` und
 für Rollbacks `HOME_DASHBOARD_IMAGE_TAG`. Tokens gehören nie in Website-Code.
 
 `web/dashboard-config.json` ist produktiv und verwendet den Live-API-Pfad. Der
 GitHub-Pages-Workflow erstellt ein separates Artefakt, überschreibt diese Datei
-mit `pages/dashboard-config.json` und lädt `pages/demo-state.json`. Produktive
+mit `pages/dashboard-config.json` und lädt `pages/demo-state.json` sowie `pages/demo-tasks-state.json`. Produktive
 Container verwenden ausschließlich die Live-Konfiguration.
 
 ## Deployment mit Docker
@@ -70,7 +69,8 @@ chmod 600 .env
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 ```
 
-Den generierten Token als `HOME_DASHBOARD_RECIPE_TOKEN` in `.env` eintragen.
+Je einen generierten Token als `HOME_DASHBOARD_RECIPE_TOKEN` und
+`HOME_DASHBOARD_HOUSEHOLD_TOKEN` in `.env` eintragen.
 `HOME_DASHBOARD_PORT` ist standardmäßig `80`; wenn belegt, z. B. `8080` verwenden.
 
 Gemeinsames Netzwerk einmal anlegen, dann veröffentlichte Images starten:
@@ -125,7 +125,7 @@ Tag ausrollen.
 GitHub Pages wird bei jedem Push auf `main` als separates statisches Artefakt
 bereitgestellt. Einmalig im Repository unter **Settings → Pages** als Quelle
 **GitHub Actions** wählen. Die Demo ist sichtbar als „DEMO-VERSION“ markiert und
-zeigt nur `pages/demo-state.json`; sie kann keine aktuellen Heimnetzrezepte
+zeigt nur `pages/demo-state.json` und `pages/demo-tasks-state.json`; sie kann keine aktuellen Heimnetzdaten
 anzeigen. Relative Website-Assets funktionieren sowohl in Pages unter dem
 Projektpfad als auch über Caddy im Container.
 
@@ -152,6 +152,22 @@ Menüs und Restesonntage ersetzen das zuletzt ausgewählte Rezept nicht.
 Der Bot speichert ausstehende Übertragungen dauerhaft und wiederholt Fehler,
 ohne Telegram zu blockieren. Neue Auswahlen ersetzen ältere offene Übertragungen.
 
+### Household Task Agent
+
+Für `HouseholdTaskAssignmentAgent` denselben externen Docker-Netzwerknamen
+`bot-network` verwenden. In dessen `.env` setzen:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="derselbe-token-wie-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
+```
+
+Beide Werte müssen gemeinsam gesetzt oder leer bleiben. Nach jeder atomaren
+Tagesbuchung sendet der Agent alle Bewohner mit heute tatsächlich zugewiesenen
+Aufgaben, „fester freier Tag“ oder „keine Aufgabe“. Vorab geplante Aufgaben und
+Monatsstatistiken erscheinen nicht. Fehler blockieren weder Telegram noch die
+nächste Buchung; ausstehende Snapshots bleiben über Neustarts erhalten.
+
 ## API-Vertrag
 
 ```text
@@ -161,7 +177,8 @@ GET /health                      interner Healthcheck
 ```
 
 Namen: Kleinbuchstaben, Ziffern und Bindestriche, maximal 64 Zeichen.
-Für Rezepte: `recipe-bot/current-recipe`.
+Für Rezepte: `recipe-bot/current-recipe`. Für Haushaltsaufgaben:
+`household-agent/current-tasks`.
 
 ```json
 {
@@ -191,8 +208,25 @@ Bot-Uhren synchronisieren; Zeitstempel bilden die Reihenfolge ab.
 
 GET liefert `source`, `key`, `updated_at` und `payload`; ohne Daten `404`.
 Ungültige Anfragen liefern `400`, fehlende/falsche Tokens `401`, ein gültiger
-Token für eine fremde Quelle `403`. Rezept-Payloads werden zusätzlich validiert;
+Token für eine fremde Quelle `403`. Rezept- und Haushalts-Payloads werden zusätzlich validiert;
 andere Schlüssel akzeptieren beliebige JSON-Objekte bis 256 KB serialisiert.
+
+Haushaltsaufgaben verwenden dieses Payload-Format. `date` ist ISO-8601, Bewohner-IDs
+sind eindeutig, Namen und Tasktexte nicht leer. Bei `off_day: true` muss `tasks`
+leer sein; ohne Tasks zeigt die Website „No task today“.
+
+```json
+{
+  "updated_at": "2026-09-21T08:13:22.000000+00:00",
+  "payload": {
+    "date": "2026-09-21",
+    "residents": [
+      {"id": "alex", "name": "Alex", "off_day": false, "tasks": ["Küche aufräumen"]},
+      {"id": "sam", "name": "Sam", "off_day": true, "tasks": []}
+    ]
+  }
+}
+```
 
 Weitere Bots konfigurieren: `HOME_DASHBOARD_TOKENS` im API-Service ist ein
 JSON-Objekt `{ "source": "token" }`. Jeder Token muss eindeutig sein und
@@ -235,9 +269,8 @@ Independent website for current bot state.
 ## Overview
 
 FastAPI stores only the latest state for each `(source, key)` in SQLite. Caddy
-serves responsive HTML, CSS, and JavaScript. The selected recipe remains visible
-past midnight. The browser polls every 15 seconds. Additional bots can use the
-same API and gain their own views later. This project does not depend on
+serves responsive HTML, CSS, and JavaScript. Tabs show selected recipes and
+household tasks; both states poll independently every 15 seconds. This project does not depend on
 RecipesAgent files, Python modules, or Telegram.
 
 A separate static demo runs on GitHub Pages at
@@ -263,12 +296,12 @@ containers including Caddy and persisted state.
 
 ## Configuration
 
-`.env` contains `HOME_DASHBOARD_RECIPE_TOKEN`, optional `HOME_DASHBOARD_PORT`,
+`.env` contains `HOME_DASHBOARD_RECIPE_TOKEN` and `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT`,
 and `HOME_DASHBOARD_IMAGE_TAG` for rollback. Never put tokens in website code.
 
 `web/dashboard-config.json` is production configuration and uses the live API
 path. The GitHub Pages workflow creates a separate artifact, replaces it with
-`pages/dashboard-config.json`, and includes `pages/demo-state.json`. Production
+`pages/dashboard-config.json`, and includes `pages/demo-state.json` and `pages/demo-tasks-state.json`. Production
 containers use only the live configuration.
 
 ## Deployment With Docker
@@ -296,7 +329,8 @@ chmod 600 .env
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 ```
 
-Put the generated value into `HOME_DASHBOARD_RECIPE_TOKEN` in `.env`.
+Put separate generated values into `HOME_DASHBOARD_RECIPE_TOKEN` and
+`HOME_DASHBOARD_HOUSEHOLD_TOKEN` in `.env`.
 `HOME_DASHBOARD_PORT` defaults to `80`; choose e.g. `8080` if occupied.
 
 Create shared Docker network once, then start published images:
@@ -348,8 +382,8 @@ SHA tag only. Always deploy API and web with the same tag.
 
 GitHub Pages deploys a separate static artifact on every `main` push. Once, set
 **Settings → Pages** source to **GitHub Actions** in the repository. The demo
-visibly says "DEMO-VERSION" and reads only `pages/demo-state.json`; it cannot
-show current LAN recipes. Relative web assets work both below the Pages project
+visibly says "DEMO-VERSION" and reads only `pages/demo-state.json` and
+`pages/demo-tasks-state.json`; it cannot show current LAN data. Relative web assets work both below the Pages project
 path and through Caddy in the container.
 
 ## Integrations
@@ -375,6 +409,21 @@ replace the previously selected recipe. The bot persists pending updates and
 retries failures without blocking Telegram. A newer selection replaces an older
 pending update.
 
+### Household Task Agent
+
+Use the same external Docker network name `bot-network` for
+`HouseholdTaskAssignmentAgent`. Set these values in its `.env`:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
+```
+
+Set both values or neither. After each atomic daily booking, the agent sends all
+residents with tasks actually booked today, fixed-day-off state, or no task. It
+does not send future plans or monthly statistics. Failures block neither Telegram
+nor the next booking; pending snapshots survive restarts.
+
 ## API Contract
 
 ```text
@@ -384,7 +433,7 @@ GET /health                        internal health check
 ```
 
 Names use lowercase letters, digits, and hyphens, up to 64 characters. Recipes
-use `recipe-bot/current-recipe`.
+use `recipe-bot/current-recipe`; household tasks use `household-agent/current-tasks`.
 
 ```json
 {
@@ -414,8 +463,25 @@ ordering.
 
 GET returns `source`, `key`, `updated_at`, and `payload`; it returns `404` before
 first state. Invalid requests return `400`, missing/invalid tokens `401`, and a
-valid token attempting another source `403`. Recipe payloads receive extra
+valid token attempting another source `403`. Recipe and household task payloads receive extra
 validation; other keys accept arbitrary serialized JSON objects up to 256 KB.
+
+Household tasks use this payload. `date` is ISO-8601, resident IDs are unique,
+names and task strings are nonempty. `off_day: true` requires an empty `tasks`
+list; a resident without tasks otherwise displays "No task today".
+
+```json
+{
+  "updated_at": "2026-09-21T08:13:22.000000+00:00",
+  "payload": {
+    "date": "2026-09-21",
+    "residents": [
+      {"id": "alex", "name": "Alex", "off_day": false, "tasks": ["Tidy kitchen"]},
+      {"id": "sam", "name": "Sam", "off_day": true, "tasks": []}
+    ]
+  }
+}
+```
 
 To add bots, configure `HOME_DASHBOARD_TOKENS` for API with a JSON object such
 as `{ "source": "token" }`. Tokens must be unique ASCII strings of at least

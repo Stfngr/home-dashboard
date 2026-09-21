@@ -1,0 +1,22 @@
+{
+  "source": "household-agent",
+  "key": "current-tasks",
+  "updated_at": "2026-09-21T18:30:00+00:00",
+  "payload": {
+    "date": "2026-09-21",
+    "residents": [
+      {
+        "id": "alex",
+        "name": "Alex",
+        "off_day": false,
+        "tasks": ["Kueche aufraeumen", "Pflanzen giessen"]
+      },
+      {
+        "id": "sam",
+        "name": "Sam",
+        "off_day": true,
+        "tasks": []
+      }
+    ]
+  }
+}

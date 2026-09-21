@@ -1,4 +1,5 @@
 {
-  "state_url": "./demo-state.json",
+  "recipe_state_url": "./demo-state.json",
+  "tasks_state_url": "./demo-tasks-state.json",
   "demo": true
 }

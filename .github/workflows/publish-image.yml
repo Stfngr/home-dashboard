@@ -23,7 +23,7 @@ jobs:
           node-version: "24"
       - run: node --test tests/web.test.js
       - run: docker network create bot-network
-      - run: HOME_DASHBOARD_RECIPE_TOKEN=ci-validation-token-1234567890 docker compose build
+      - run: HOME_DASHBOARD_RECIPE_TOKEN=ci-recipe-token-1234567890 HOME_DASHBOARD_HOUSEHOLD_TOKEN=ci-household-token-1234567890 docker compose build
       - run: python tests/smoke_docker.py
 
   publish:

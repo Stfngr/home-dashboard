@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir _site
           cp web/index.html web/styles.css web/app.js _site/
-          cp pages/dashboard-config.json pages/demo-state.json _site/
+          cp pages/dashboard-config.json pages/demo-state.json pages/demo-tasks-state.json _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

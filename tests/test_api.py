@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 from home_dashboard.api import create_app
 
 TOKEN = "r" * 40
+HOUSEHOLD_TOKEN = "h" * 40
 URL = "/api/v1/state/recipe-bot/current-recipe"
+TASKS_URL = "/api/v1/state/household-agent/current-tasks"
 
 
 def update(day=21):
@@ -18,14 +20,24 @@ def update(day=21):
     }}
 
 
+def tasks_update(residents=None):
+    return {"updated_at": "2026-09-21T08:00:00Z", "payload": {
+        "date": "2026-09-21", "residents": residents if residents is not None else [{
+            "id": "alex", "name": "Alex", "off_day": False, "tasks": ["Vacuum"]
+        }]
+    }}
+
+
 class APITests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "state.sqlite"
-        self.app = create_app(self.path, {"recipe-bot": TOKEN, "weather-bot": "w" * 40})
+        self.app = create_app(self.path, {"recipe-bot": TOKEN, "household-agent": HOUSEHOLD_TOKEN,
+                                          "weather-bot": "w" * 40})
         self.client = self.enterContext(TestClient(self.app))
         self.auth = {"Authorization": f"Bearer {TOKEN}"}
+        self.household_auth = {"Authorization": f"Bearer {HOUSEHOLD_TOKEN}"}
 
     def test_authentication_and_source_isolation(self):
         self.assertEqual(self.client.put(URL, json=update()).status_code, 401)
@@ -74,6 +86,32 @@ class APITests(unittest.TestCase):
             "Authorization": "Bearer " + "w" * 40
         }).status_code, 200)
         self.assertEqual(self.client.get(url).json()["payload"], data["payload"])
+
+    def test_household_tasks_are_validated_and_isolated(self):
+        self.assertEqual(self.client.put(TASKS_URL, json=tasks_update(), headers=self.auth).status_code, 403)
+        self.assertEqual(self.client.put(TASKS_URL, json=tasks_update(), headers=self.household_auth).status_code,
+                         200)
+        self.assertEqual(self.client.get(TASKS_URL).json()["payload"], tasks_update()["payload"])
+
+    def test_household_agent_other_keys_remain_generic(self):
+        url = "/api/v1/state/household-agent/preferences"
+        data = {"updated_at": "2026-09-21T08:00:00Z", "payload": {"theme": "green"}}
+        self.assertEqual(self.client.put(url, json=data, headers=self.household_auth).status_code, 200)
+        self.assertEqual(self.client.get(url).json()["payload"], data["payload"])
+
+    def test_invalid_household_tasks_payload(self):
+        invalid_residents = [
+            [],
+            [{"id": "alex", "name": "Alex", "off_day": False, "tasks": ["Vacuum"]},
+             {"id": "alex", "name": "Sam", "off_day": False, "tasks": ["Cook"]}],
+            [{"id": "alex", "name": " ", "off_day": False, "tasks": ["Vacuum"]}],
+            [{"id": "alex", "name": "Alex", "off_day": False, "tasks": [""]}],
+            [{"id": "alex", "name": "Alex", "off_day": True, "tasks": ["Vacuum"]}],
+        ]
+        for residents in invalid_residents:
+            with self.subTest(residents=residents):
+                self.assertEqual(self.client.put(TASKS_URL, json=tasks_update(residents),
+                                                 headers=self.household_auth).status_code, 400)
 
     def test_health(self):
         self.assertEqual(self.client.get("/health").json(), {"status": "ok"})

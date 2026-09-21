@@ -61,6 +61,52 @@ class RecipePayload(BaseModel):
         return value
 
 
+class ResidentTasks(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    off_day: bool
+    tasks: list[str]
+
+    @field_validator("id", "name")
+    @classmethod
+    def nonempty_text(cls, value):
+        if not value.strip():
+            raise ValueError("Empty resident text")
+        return value
+
+    @field_validator("tasks")
+    @classmethod
+    def nonempty_tasks(cls, values):
+        if any(not value.strip() for value in values):
+            raise ValueError("Empty task")
+        return values
+
+    def model_post_init(self, __context):
+        if self.off_day and self.tasks:
+            raise ValueError("Days off cannot have tasks")
+
+
+class HouseholdTasksPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    date: str
+    residents: list[ResidentTasks] = Field(min_length=1)
+
+    @field_validator("date")
+    @classmethod
+    def valid_date(cls, value):
+        from datetime import date
+        date.fromisoformat(value)
+        return value
+
+    @field_validator("residents")
+    @classmethod
+    def unique_resident_ids(cls, values):
+        if len({resident.id for resident in values}) != len(values):
+            raise ValueError("Duplicate resident id")
+        return values
+
+
 def create_app(database: Path | None = None, tokens: dict[str, str] | None = None):
     database = database or Path(os.environ.get("HOME_DASHBOARD_DB", "/data/dashboard.sqlite"))
 
@@ -118,6 +164,11 @@ def create_app(database: Path | None = None, tokens: dict[str, str] | None = Non
                 RecipePayload.model_validate(update.payload)
             except ValueError:
                 raise HTTPException(400, "Invalid recipe payload") from None
+        elif (source, key) == ("household-agent", "current-tasks"):
+            try:
+                HouseholdTasksPayload.model_validate(update.payload)
+            except ValueError:
+                raise HTTPException(400, "Invalid household tasks payload") from None
         timestamp = update.updated_at.astimezone(timezone.utc).isoformat(timespec="microseconds")
         payload = json.dumps(update.payload, allow_nan=False, ensure_ascii=True)
         with closing(sqlite3.connect(database, timeout=10)) as connection, connection:

@@ -1,4 +1,5 @@
 {
-  "state_url": "/api/v1/state/recipe-bot/current-recipe",
+  "recipe_state_url": "/api/v1/state/recipe-bot/current-recipe",
+  "tasks_state_url": "/api/v1/state/household-agent/current-tasks",
   "demo": false
 }

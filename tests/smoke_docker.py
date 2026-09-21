@@ -15,6 +15,7 @@ def main():
     prefix = "home-dashboard-test-" + secrets.token_hex(6)
     api, web, volume = prefix + "-api", prefix + "-web", prefix + "-data"
     token = secrets.token_urlsafe(32)
+    household_token = secrets.token_urlsafe(32)
 
     def request(base, path, data=None, auth=False):
         headers = {"Content-Type": "application/json"}
@@ -48,7 +49,7 @@ def main():
                "--network-alias", "home-dashboard-api", "--read-only", "--tmpfs", "/tmp",
                "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
                "-v", volume + ":/data", "-p", "127.0.0.1::8000",
-               "-e", "HOME_DASHBOARD_TOKENS=" + json.dumps({"recipe-bot": token}),
+               "-e", "HOME_DASHBOARD_TOKENS=" + json.dumps({"recipe-bot": token, "household-agent": household_token}),
                "home-dashboard-home-dashboard-api")
         api_url = port(api, "8000")
         ready(api_url, "/health")
@@ -67,6 +68,17 @@ def main():
         assert request(web_url, path, data, True)[0] == 405
         assert request(api_url, path, data, True)[0] == 200
         assert json.loads(request(web_url, path)[1])["payload"] == data["payload"]
+        tasks_path = "/api/v1/state/household-agent/current-tasks"
+        tasks = {"updated_at": "2026-09-21T08:00:00Z", "payload": {
+            "date": "2026-09-21", "residents": [{
+                "id": "alex", "name": "Alex", "off_day": False, "tasks": ["Vacuum"]
+            }]}}
+        task_request = Request(api_url + tasks_path, data=json.dumps(tasks).encode(), headers={
+            "Content-Type": "application/json", "Authorization": "Bearer " + household_token
+        }, method="PUT")
+        with urlopen(task_request, timeout=3) as response:
+            assert response.status == 200
+        assert json.loads(request(web_url, tasks_path)[1])["payload"] == tasks["payload"]
         docker("restart", api)
         api_url = port(api, "8000")
         ready(api_url, "/health")
@@ -74,9 +86,10 @@ def main():
         assert b"Home Dashboard" in request(web_url, "/")[1]
         assert request(web_url, "/app.js")[0] == 200
         assert json.loads(request(web_url, "/dashboard-config.json")[1]) == {
-            "state_url": "/api/v1/state/recipe-bot/current-recipe", "demo": False
+            "recipe_state_url": "/api/v1/state/recipe-bot/current-recipe",
+            "tasks_state_url": "/api/v1/state/household-agent/current-tasks", "demo": False
         }
-        print("Docker smoke passed: auth, live web configuration, read-only gateway, recipe roundtrip, restart persistence.")
+        print("Docker smoke passed: auth, live web configuration, read-only gateway, recipe and tasks roundtrips, restart persistence.")
     finally:
         for container in (web, api):
             subprocess.run(["docker", "rm", "-f", container], capture_output=True)

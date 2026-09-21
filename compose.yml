@@ -4,7 +4,7 @@ services:
     build: .
     environment:
       HOME_DASHBOARD_DB: /data/dashboard.sqlite
-      HOME_DASHBOARD_TOKENS: '{"recipe-bot":"${HOME_DASHBOARD_RECIPE_TOKEN:?Set HOME_DASHBOARD_RECIPE_TOKEN in .env}"}'
+      HOME_DASHBOARD_TOKENS: '{"recipe-bot":"${HOME_DASHBOARD_RECIPE_TOKEN:?Set HOME_DASHBOARD_RECIPE_TOKEN in .env}","household-agent":"${HOME_DASHBOARD_HOUSEHOLD_TOKEN:?Set HOME_DASHBOARD_HOUSEHOLD_TOKEN in .env}"}'
     volumes:
       - dashboard-data:/data
     networks: [bot-network]

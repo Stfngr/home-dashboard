@@ -9,20 +9,32 @@
 </head>
 <body>
   <header><p class="eyebrow">ZU HAUSE</p><h1>Home Dashboard</h1>
-    <p id="demo" class="demo" hidden>DEMO-VERSION · Beispielrezept · keine Live-Daten</p>
+    <p id="demo" class="demo" hidden>DEMO-VERSION · Beispieldaten · keine Live-Daten</p>
     <p id="status" role="status">Verbindung wird hergestellt …</p></header>
   <main>
-    <section id="empty" class="card"><h2>Noch kein Rezept ausgewählt.</h2>
-      <p>Sobald du im Telegram-Bot ein Rezept auswählst, erscheint es hier.</p></section>
-    <article id="recipe" class="card" hidden>
-      <img id="photo" alt="" referrerpolicy="no-referrer" hidden>
-      <div class="content"><p class="eyebrow">ZULETZT AUSGEWÄHLT</p>
-        <h2 id="title"></h2><p id="selection"></p><p id="facts" class="facts"></p>
-        <div class="columns"><section><h3>Zutaten</h3><ul id="ingredients"></ul></section>
-          <section><h3>Zubereitung</h3><ol id="instructions"></ol></section></div>
-        <footer><p id="credits"></p><a id="source" target="_blank" rel="noopener noreferrer" hidden>Originalrezept öffnen ↗</a></footer>
-      </div>
-    </article>
+    <div class="tabs" role="tablist" aria-label="Dashboard-Bereiche">
+      <button id="recipe-tab" role="tab" aria-selected="true" aria-controls="recipe-panel">Rezept</button>
+      <button id="tasks-tab" role="tab" aria-selected="false" aria-controls="tasks-panel" tabindex="-1">Aufgaben</button>
+    </div>
+    <section id="recipe-panel" role="tabpanel" aria-labelledby="recipe-tab">
+      <section id="empty" class="card"><h2>Noch kein Rezept ausgewählt.</h2>
+        <p>Sobald du im Telegram-Bot ein Rezept auswählst, erscheint es hier.</p></section>
+      <article id="recipe" class="card" hidden>
+        <img id="photo" alt="" referrerpolicy="no-referrer" hidden>
+        <div class="content"><p class="eyebrow">ZULETZT AUSGEWÄHLT</p>
+          <h2 id="title"></h2><p id="selection"></p><p id="facts" class="facts"></p>
+          <div class="columns"><section><h3>Zutaten</h3><ul id="ingredients"></ul></section>
+            <section><h3>Zubereitung</h3><ol id="instructions"></ol></section></div>
+          <footer><p id="credits"></p><a id="source" target="_blank" rel="noopener noreferrer" hidden>Originalrezept öffnen ↗</a></footer>
+        </div>
+      </article>
+    </section>
+    <section id="tasks-panel" role="tabpanel" aria-labelledby="tasks-tab" hidden>
+      <p id="tasks-status" role="status">Aufgaben werden geladen …</p>
+      <section id="tasks-empty" class="card"><h2>Noch keine Aufgaben verfügbar.</h2>
+        <p>Sobald Haushaltsaufgaben geplant sind, erscheinen sie hier.</p></section>
+      <section id="tasks" class="task-grid" aria-label="Haushaltsaufgaben" hidden></section>
+    </section>
   </main>
   <footer class="page-footer">Automatische Aktualisierung alle 15 Sekunden.</footer>
 </body>
