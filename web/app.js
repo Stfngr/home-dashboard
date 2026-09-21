@@ -5,7 +5,16 @@ export function safeUrl(value) {
   } catch { return ""; }
 }
 
-export function createDashboard(doc, fetcher, schedule = setTimeout) {
+export function validateConfig(config) {
+  if (!config || typeof config.state_url !== "string" || !config.state_url
+      || typeof config.demo !== "boolean") throw new Error("Invalid dashboard configuration");
+  return config;
+}
+
+export function createDashboard(doc, fetcher, schedule = setTimeout, config = {
+  state_url: "/api/v1/state/recipe-bot/current-recipe", demo: false
+}) {
+  validateConfig(config);
   const el = (id) => doc.getElementById(id);
   let timestamp = null;
   function render(state) {
@@ -42,7 +51,7 @@ export function createDashboard(doc, fetcher, schedule = setTimeout) {
   }
   async function refresh() {
     try {
-      const response = await fetcher("/api/v1/state/recipe-bot/current-recipe", {
+      const response = await fetcher(config.state_url, {
         cache: "no-store", signal: AbortSignal.timeout(10000)
       });
       if (response.status === 404 && timestamp === null) {
@@ -60,4 +69,20 @@ export function createDashboard(doc, fetcher, schedule = setTimeout) {
   return {refresh};
 }
 
-if (typeof document !== "undefined") createDashboard(document, window.fetch.bind(window)).refresh();
+export async function startDashboard(doc, fetcher, schedule = setTimeout) {
+  const configResponse = await fetcher("./dashboard-config.json", {
+    cache: "no-store", signal: AbortSignal.timeout(10000)
+  });
+  if (!configResponse.ok) throw new Error("Dashboard configuration unavailable");
+  const config = validateConfig(await configResponse.json());
+  doc.getElementById("demo").hidden = !config.demo;
+  const dashboard = createDashboard(doc, fetcher, schedule, config);
+  await dashboard.refresh();
+  return dashboard;
+}
+
+if (typeof document !== "undefined") {
+  startDashboard(document, window.fetch.bind(window)).catch(() => {
+    document.getElementById("status").textContent = "Dashboard-Konfiguration nicht verfügbar.";
+  });
+}

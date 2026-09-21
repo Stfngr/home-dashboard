@@ -1,0 +1,39 @@
+name: Deploy GitHub Pages demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test tests/web.test.js
+      - uses: actions/configure-pages@v5
+      - name: Prepare static demo
+        run: |
+          mkdir _site
+          cp web/index.html web/styles.css web/app.js _site/
+          cp pages/dashboard-config.json pages/demo-state.json _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,4 @@
+{
+  "state_url": "/api/v1/state/recipe-bot/current-recipe",
+  "demo": false
+}

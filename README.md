@@ -13,6 +13,10 @@ Weitere Bots können dieselbe API verwenden; ihre Anzeigen lassen sich später a
 weitere Bereiche ergänzen. Es gibt keine Abhängigkeit von RecipesAgent-Dateien,
 dessen Python-Modulen oder Telegram.
 
+Eine separate statische Demo läuft über GitHub Pages unter
+`https://stfngr.github.io/home-dashboard/`. Sie zeigt ein festes Beispielrezept,
+enthält keine Tokens oder Live-Daten und erreicht nie die Heimnetz-API.
+
 ## Voraussetzungen
 
 Unterstützt wird ein Linux-Host mit ARM64-Architektur. Veröffentlicht werden
@@ -34,6 +38,11 @@ einschließlich Caddy und Datenpersistenz.
 
 `.env` enthält `HOME_DASHBOARD_RECIPE_TOKEN`, optional `HOME_DASHBOARD_PORT` und
 für Rollbacks `HOME_DASHBOARD_IMAGE_TAG`. Tokens gehören nie in Website-Code.
+
+`web/dashboard-config.json` ist produktiv und verwendet den Live-API-Pfad. Der
+GitHub-Pages-Workflow erstellt ein separates Artefakt, überschreibt diese Datei
+mit `pages/dashboard-config.json` und lädt `pages/demo-state.json`. Produktive
+Container verwenden ausschließlich die Live-Konfiguration.
 
 ## Deployment mit Docker
 
@@ -110,6 +119,15 @@ HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
 abschließenden CI-Check noch `main` entspricht. Ältere Workflow-Läufe erzeugen
 allenfalls ihren unveränderlichen SHA-Tag. API und Website immer mit demselben
 Tag ausrollen.
+
+### GitHub-Pages-Demo
+
+GitHub Pages wird bei jedem Push auf `main` als separates statisches Artefakt
+bereitgestellt. Einmalig im Repository unter **Settings → Pages** als Quelle
+**GitHub Actions** wählen. Die Demo ist sichtbar als „DEMO-VERSION“ markiert und
+zeigt nur `pages/demo-state.json`; sie kann keine aktuellen Heimnetzrezepte
+anzeigen. Relative Website-Assets funktionieren sowohl in Pages unter dem
+Projektpfad als auch über Caddy im Container.
 
 ## Integrationen
 
@@ -222,6 +240,10 @@ past midnight. The browser polls every 15 seconds. Additional bots can use the
 same API and gain their own views later. This project does not depend on
 RecipesAgent files, Python modules, or Telegram.
 
+A separate static demo runs on GitHub Pages at
+`https://stfngr.github.io/home-dashboard/`. It shows a fixed example recipe,
+contains no tokens or live data, and never reaches the LAN API.
+
 ## Requirements
 
 Requires Linux ARM64 host. Published images are `linux/arm64`; Docker Engine with
@@ -243,6 +265,11 @@ containers including Caddy and persisted state.
 
 `.env` contains `HOME_DASHBOARD_RECIPE_TOKEN`, optional `HOME_DASHBOARD_PORT`,
 and `HOME_DASHBOARD_IMAGE_TAG` for rollback. Never put tokens in website code.
+
+`web/dashboard-config.json` is production configuration and uses the live API
+path. The GitHub Pages workflow creates a separate artifact, replaces it with
+`pages/dashboard-config.json`, and includes `pages/demo-state.json`. Production
+containers use only the live configuration.
 
 ## Deployment With Docker
 
@@ -316,6 +343,14 @@ HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
 `latest` and `main` are promoted only by a build whose commit still matches
 `main` at the final CI check. Older workflow runs may publish their immutable
 SHA tag only. Always deploy API and web with the same tag.
+
+### GitHub Pages Demo
+
+GitHub Pages deploys a separate static artifact on every `main` push. Once, set
+**Settings → Pages** source to **GitHub Actions** in the repository. The demo
+visibly says "DEMO-VERSION" and reads only `pages/demo-state.json`; it cannot
+show current LAN recipes. Relative web assets work both below the Pages project
+path and through Caddy in the container.
 
 ## Integrations
 

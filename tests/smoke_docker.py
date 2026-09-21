@@ -73,7 +73,10 @@ def main():
         assert json.loads(request(web_url, path)[1])["payload"] == data["payload"]
         assert b"Home Dashboard" in request(web_url, "/")[1]
         assert request(web_url, "/app.js")[0] == 200
-        print("Docker smoke passed: auth, read-only gateway, recipe roundtrip, restart persistence.")
+        assert json.loads(request(web_url, "/dashboard-config.json")[1]) == {
+            "state_url": "/api/v1/state/recipe-bot/current-recipe", "demo": False
+        }
+        print("Docker smoke passed: auth, live web configuration, read-only gateway, recipe roundtrip, restart persistence.")
     finally:
         for container in (web, api):
             subprocess.run(["docker", "rm", "-f", container], capture_output=True)

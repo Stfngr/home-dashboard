@@ -1,0 +1,29 @@
+{
+  "source": "recipe-bot",
+  "key": "current-recipe",
+  "updated_at": "2026-09-21T18:30:00+00:00",
+  "payload": {
+    "date": "2026-09-21",
+    "automatic": false,
+    "recipe": {
+      "id": 100001,
+      "title": "Demo: Pasta Primavera",
+      "ingredients": [
+        "250 g Pasta",
+        "1 Zucchini",
+        "1 rote Paprika",
+        "2 EL Olivenöl",
+        "Frische Kräuter"
+      ],
+      "instructions": [
+        "Pasta nach Packungsanleitung kochen.",
+        "Gemüse würfeln und in Olivenöl anbraten.",
+        "Pasta und Kräuter unterheben und servieren."
+      ],
+      "servings": 2,
+      "ready_minutes": 25,
+      "image_url": "",
+      "source_url": ""
+    }
+  }
+}

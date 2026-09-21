@@ -6,3 +6,4 @@
 **/*.sqlite*
 node_modules
 tests
+pages

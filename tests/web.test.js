@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createDashboard, safeUrl} from "../web/app.js";
+import {createDashboard, safeUrl, startDashboard, validateConfig} from "../web/app.js";
 
 function harness(responses) {
   const nodes = new Map();
@@ -14,12 +14,13 @@ function harness(responses) {
     createElement() { return {}; }
   };
   const delays = [];
-  const app = createDashboard(doc, async () => {
+  const fetcher = async () => {
     const response = responses.shift();
     if (response instanceof Error) throw response;
     return response;
-  }, (fn, delay) => delays.push(delay));
-  return {app, node: doc.getElementById, delays};
+  };
+  const app = createDashboard(doc, fetcher, (fn, delay) => delays.push(delay));
+  return {app, fetcher, node: doc.getElementById, delays};
 }
 function response(automatic = false, timestamp = "2026-09-21T08:00:00Z") {
   return {ok: true, json: async () => ({updated_at: timestamp, payload: {
@@ -60,4 +61,23 @@ test("URL schemes restricted to HTTP(S)", () => {
   assert.equal(safeUrl("data:text/html,x"), "");
   assert.equal(safeUrl("javascript:alert(1)"), "");
   assert.equal(safeUrl("https://example.com/rice"), "https://example.com/rice");
+});
+test("explicit demo configuration loads local sample and label", async () => {
+  const h = harness([response()]);
+  const calls = [];
+  const fetcher = async (url) => {
+    calls.push(url);
+    if (url === "./dashboard-config.json") return {ok: true, json: async () => ({
+      state_url: "./demo-state.json", demo: true
+    })};
+    return h.fetcher(url);
+  };
+  await startDashboard({getElementById: h.node, createElement() { return {}; }}, fetcher,
+                       (fn, delay) => h.delays.push(delay));
+  assert.deepEqual(calls, ["./dashboard-config.json", "./demo-state.json"]);
+  assert.equal(h.node("demo").hidden, false);
+});
+test("invalid configuration is rejected", () => {
+  assert.throws(() => validateConfig({state_url: "", demo: false}));
+  assert.throws(() => validateConfig({state_url: "./demo-state.json"}));
 });
