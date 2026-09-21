@@ -1,0 +1,22 @@
+:80 {
+    root * /srv
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Content-Security-Policy "default-src 'self'; img-src 'self' https: http:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    }
+    @readApi {
+        path /api/*
+        method GET HEAD
+    }
+    handle @readApi {
+        reverse_proxy home-dashboard-api:8000
+    }
+    handle /api/* {
+        respond "Method not allowed" 405
+    }
+    handle {
+        header Cache-Control no-cache
+        file_server
+    }
+}

@@ -1,0 +1,37 @@
+name: home-dashboard
+services:
+  home-dashboard-api:
+    build: .
+    environment:
+      HOME_DASHBOARD_DB: /data/dashboard.sqlite
+      HOME_DASHBOARD_TOKENS: '{"recipe-bot":"${HOME_DASHBOARD_RECIPE_TOKEN:?Set HOME_DASHBOARD_RECIPE_TOKEN in .env}"}'
+    volumes:
+      - dashboard-data:/data
+    networks: [bot-network]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  home-dashboard-web:
+    build: ./web
+    ports:
+      - "${HOME_DASHBOARD_PORT:-80}:80"
+    networks: [bot-network]
+    depends_on:
+      home-dashboard-api:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/data, /config]
+    security_opt: [no-new-privileges:true]
+volumes:
+  dashboard-data:
+networks:
+  bot-network:
+    external: true
