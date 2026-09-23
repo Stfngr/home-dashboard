@@ -47,9 +47,8 @@ Container verwenden ausschließlich die Live-Konfiguration.
 
 Voraussetzungen: Linux-Host mit ARM64-Architektur und Docker Engine mit
 Compose-Plugin. Veröffentlicht werden `linux/arm64`-Images; lokales Bauen bleibt
-für Entwicklung möglich. Nach
-jedem Push auf `main` prüft GitHub Actions API, Website und Docker-Integration
-und veröffentlicht beide Container:
+für Entwicklung möglich. Nach jedem Push auf `main` prüft GitHub Actions API,
+Website und Docker-Integration und veröffentlicht beide Container:
 
 ```text
 ghcr.io/stfngr/home-dashboard-api:latest
@@ -63,27 +62,56 @@ ghcr.io/stfngr/home-dashboard-web:sha-<commit>
 Nach dem ersten Workflow-Lauf in GitHub unter **Packages** beide Packages auf
 **Public** setzen. Sonst benötigt der Host GitHub-Zugangsdaten zum Pullen.
 
+### Erstinstallation mit veröffentlichten Images
+
+**Kein Repository-Klon nötig:** Nur beide Compose-Dateien und die
+Konfigurationsvorlage auf den Host herunterladen. Alle folgenden Befehle im
+selben Verzeichnis ausführen:
+
+```bash
+mkdir -p "$HOME/home-dashboard"
+cd "$HOME/home-dashboard"
+curl --fail --location --silent --show-error --output compose.yml \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/compose.yml
+curl --fail --location --silent --show-error --output compose.production.yml \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/compose.production.yml
+curl --fail --location --silent --show-error --output .env.example \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/.env.example
+```
+
+Nur bei der Erstinstallation `.env` anlegen; bestehende Zugangsdaten nicht
+überschreiben. Zwei **verschiedene** Tokens generieren (Befehl zweimal
+aufrufen), `.env` mit einem Texteditor bearbeiten und beide Platzhalter
+ersetzen:
+
 ```bash
 cp .env.example .env
 chmod 600 .env
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+nano .env
 ```
 
-Je einen generierten Token als `HOME_DASHBOARD_RECIPE_TOKEN` und
-`HOME_DASHBOARD_HOUSEHOLD_TOKEN` in `.env` eintragen.
-`HOME_DASHBOARD_PORT` ist standardmäßig `80`; wenn belegt, z. B. `8080` verwenden.
+Die Werte bei `HOME_DASHBOARD_RECIPE_TOKEN` und
+`HOME_DASHBOARD_HOUSEHOLD_TOKEN` jeweils ohne Anführungszeichen als `KEY=value`
+eintragen. `HOME_DASHBOARD_PORT` ist standardmäßig `80`; falls belegt, z. B.
+`8080` eintragen. Tokens nicht in Git übernehmen. `HOME_DASHBOARD_IMAGE_TAG`
+bleibt für den ersten Start auskommentiert (`latest`).
 
-Gemeinsames Netzwerk einmal anlegen, dann veröffentlichte Images starten:
+Gemeinsames Netzwerk einmal anlegen. Compose liest `.env` bereits beim Pullen;
+dann beide veröffentlichten Images laden, Container starten und prüfen:
 
 ```bash
-docker network inspect bot-network >/dev/null 2>&1 || docker network create bot-network
-docker compose -f compose.yml -f compose.production.yml pull
-docker compose -f compose.yml -f compose.production.yml up -d
-docker compose -f compose.yml -f compose.production.yml ps
-docker compose -f compose.yml -f compose.production.yml logs --tail=100
+sudo docker network inspect bot-network >/dev/null 2>&1 || sudo docker network create bot-network
+sudo docker compose -f compose.yml -f compose.production.yml config -q
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml ps
+sudo docker compose -f compose.yml -f compose.production.yml logs --tail=100
 ```
 
-Lokal entwickeln oder vor dem ersten CI-Image bauen:
+Lokal im Repository entwickeln oder vor dem ersten CI-Image bauen (statt des
+obigen Produktionsstarts):
 
 ```bash
 docker compose up -d --build
@@ -100,25 +128,29 @@ werden vom Browser direkt von der jeweiligen Rezeptquelle geladen.
 
 ### Aktualisieren und Rollback
 
-Ein Update lädt beide neuesten Images und erstellt Container bei Bedarf neu;
-SQLite-Volume und Docker-Netzwerk bleiben erhalten:
+Im selben Verzeichnis lädt ein Update beide neuesten Images und erstellt
+Container bei Bedarf neu; `.env`, SQLite-Volume und Docker-Netzwerk bleiben
+erhalten:
 
 ```bash
-docker compose -f compose.yml -f compose.production.yml pull
-docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
 ```
 
-Für ein gezieltes Rollback dieselbe SHA-Version für API und Website verwenden:
+Für ein gezieltes Rollback in `.env` `HOME_DASHBOARD_IMAGE_TAG=sha-<commit>`
+eintragen (Platzhalter ersetzen), dann **beide** Images mit demselben SHA-Tag
+pullen und starten:
 
 ```bash
-HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
-  docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
 ```
 
-`latest` und `main` werden nur vom Build aktualisiert, dessen Commit beim
-abschließenden CI-Check noch `main` entspricht. Ältere Workflow-Läufe erzeugen
-allenfalls ihren unveränderlichen SHA-Tag. API und Website immer mit demselben
-Tag ausrollen.
+Für spätere Updates auf `latest` den Tag-Eintrag in `.env` wieder entfernen
+oder auskommentieren. `latest` und `main` werden nur vom Build aktualisiert,
+dessen Commit beim abschließenden CI-Check noch `main` entspricht. Ältere
+Workflow-Läufe erzeugen allenfalls ihren unveränderlichen SHA-Tag. API und
+Website immer mit demselben Tag ausrollen.
 
 ### GitHub-Pages-Demo
 
@@ -236,12 +268,17 @@ gehören nie in Website-Code.
 
 ## Betrieb und Daten
 
+Im Repository bei lokal gebauten Containern:
+
 ```bash
 docker compose logs -f
 docker compose up -d --build
 docker compose stop
 docker compose start
 ```
+
+Für veröffentlichte Images stattdessen stets die beiden Compose-Dateien wie
+oben angegeben verwenden.
 
 SQLite liegt im benannten Volume `home-dashboard_dashboard-data` unter
 `/data/dashboard.sqlite`. Es gibt keine Historie. Das Volume bleibt bei
@@ -321,29 +358,54 @@ ghcr.io/stfngr/home-dashboard-web:sha-<commit>
 After the first workflow run, open both GitHub **Packages** pages and make the
 packages **Public**, otherwise the host needs GitHub credentials to pull them.
 
-Copy the project folder to the host, then run these commands in `home-dashboard`:
+### First Installation With Published Images
+
+**No repository checkout needed:** Download only the two Compose files and the
+environment template onto the host. Run all following commands in the same
+directory:
+
+```bash
+mkdir -p "$HOME/home-dashboard"
+cd "$HOME/home-dashboard"
+curl --fail --location --silent --show-error --output compose.yml \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/compose.yml
+curl --fail --location --silent --show-error --output compose.production.yml \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/compose.production.yml
+curl --fail --location --silent --show-error --output .env.example \
+  https://raw.githubusercontent.com/Stfngr/home-dashboard/main/.env.example
+```
+
+Create `.env` only during first installation; do not overwrite existing
+credentials. Generate **two different** tokens (run the command twice), edit
+`.env` in a text editor, and replace both placeholders:
 
 ```bash
 cp .env.example .env
 chmod 600 .env
 python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+nano .env
 ```
 
-Put separate generated values into `HOME_DASHBOARD_RECIPE_TOKEN` and
-`HOME_DASHBOARD_HOUSEHOLD_TOKEN` in `.env`.
-`HOME_DASHBOARD_PORT` defaults to `80`; choose e.g. `8080` if occupied.
+Set `HOME_DASHBOARD_RECIPE_TOKEN` and `HOME_DASHBOARD_HOUSEHOLD_TOKEN` to the two
+values, using unquoted `KEY=value` lines. `HOME_DASHBOARD_PORT` defaults to `80`;
+choose e.g. `8080` if occupied. Never commit tokens. Leave
+`HOME_DASHBOARD_IMAGE_TAG` commented out for the initial deployment (`latest`).
 
-Create shared Docker network once, then start published images:
+Create the shared network once. Compose reads `.env` even for `pull`; then pull
+both published images, start the containers, and inspect their status:
 
 ```bash
-docker network inspect bot-network >/dev/null 2>&1 || docker network create bot-network
-docker compose -f compose.yml -f compose.production.yml pull
-docker compose -f compose.yml -f compose.production.yml up -d
-docker compose -f compose.yml -f compose.production.yml ps
-docker compose -f compose.yml -f compose.production.yml logs --tail=100
+sudo docker network inspect bot-network >/dev/null 2>&1 || sudo docker network create bot-network
+sudo docker compose -f compose.yml -f compose.production.yml config -q
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml ps
+sudo docker compose -f compose.yml -f compose.production.yml logs --tail=100
 ```
 
-For local development or a local build before first CI images exist:
+For local development in the repository or a local build before CI images exist
+(instead of the production steps above):
 
 ```bash
 docker compose up -d --build
@@ -359,21 +421,24 @@ from each recipe source.
 
 ### Update And Roll Back
 
-Update pulls both latest images and recreates containers as needed; the SQLite
-volume and Docker network remain intact:
+From the same directory, update pulls both latest images and recreates containers
+as needed; `.env`, the SQLite volume, and the Docker network remain intact:
 
 ```bash
-docker compose -f compose.yml -f compose.production.yml pull
-docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
 ```
 
-For a targeted rollback, use the same immutable SHA tag for API and web:
+For a targeted rollback, set `HOME_DASHBOARD_IMAGE_TAG=sha-<commit>` in `.env`
+(replace the placeholder), then pull and start **both** images with the same SHA
+tag:
 
 ```bash
-HOME_DASHBOARD_IMAGE_TAG=sha-<commit> \
-  docker compose -f compose.yml -f compose.production.yml up -d
+sudo docker compose -f compose.yml -f compose.production.yml pull
+sudo docker compose -f compose.yml -f compose.production.yml up -d
 ```
 
+Remove or comment out the tag in `.env` to return to `latest` for future updates.
 `latest` and `main` are promoted only by a build whose commit still matches
 `main` at the final CI check. Older workflow runs may publish their immutable
 SHA tag only. Always deploy API and web with the same tag.
@@ -490,12 +555,16 @@ environment variable. Never put tokens in website code.
 
 ## Operations And Data
 
+For locally built containers in the repository:
+
 ```bash
 docker compose logs -f
 docker compose up -d --build
 docker compose stop
 docker compose start
 ```
+
+For published images, always use both Compose files as described above.
 
 SQLite lives in named volume `home-dashboard_dashboard-data` at
 `/data/dashboard.sqlite`. There is no history. The volume survives container
