@@ -21,48 +21,7 @@ enthält keine Tokens oder Live-Daten und erreicht nie die Heimnetz-API.
 Unterstützt wird ein Linux-Host mit ARM64-Architektur. Veröffentlicht werden
 `linux/arm64`-Images; Docker mit Compose-Plugin ist der offizielle Betriebsweg.
 
-## Lokale Entwicklung und Tests
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e '.[test]'
-.venv/bin/python -m unittest discover -s tests -v
-node --test tests/web.test.js
-```
-
-Nach `docker compose build` prüft `python3 tests/smoke_docker.py` echte Container
-einschließlich Caddy und Datenpersistenz.
-
-## Konfiguration
-
-`.env` enthält `HOME_DASHBOARD_RECIPE_TOKEN` und `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT` und
-für Rollbacks `HOME_DASHBOARD_IMAGE_TAG`. Tokens gehören nie in Website-Code.
-
-`web/dashboard-config.json` ist produktiv und verwendet den Live-API-Pfad. Der
-GitHub-Pages-Workflow erstellt ein separates Artefakt, überschreibt diese Datei
-mit `pages/dashboard-config.json` und lädt `pages/demo-state.json` sowie `pages/demo-tasks-state.json`. Produktive
-Container verwenden ausschließlich die Live-Konfiguration.
-
-## Deployment mit Docker
-
-Voraussetzungen: Linux-Host mit ARM64-Architektur und Docker Engine mit
-Compose-Plugin. Veröffentlicht werden `linux/arm64`-Images; lokales Bauen bleibt
-für Entwicklung möglich. Nach jedem Push auf `main` prüft GitHub Actions API,
-Website und Docker-Integration und veröffentlicht beide Container:
-
-```text
-ghcr.io/stfngr/home-dashboard-api:latest
-ghcr.io/stfngr/home-dashboard-api:main
-ghcr.io/stfngr/home-dashboard-api:sha-<commit>
-ghcr.io/stfngr/home-dashboard-web:latest
-ghcr.io/stfngr/home-dashboard-web:main
-ghcr.io/stfngr/home-dashboard-web:sha-<commit>
-```
-
-Nach dem ersten Workflow-Lauf in GitHub unter **Packages** beide Packages auf
-**Public** setzen. Sonst benötigt der Host GitHub-Zugangsdaten zum Pullen.
-
-### Erstinstallation mit veröffentlichten Images
+## Schnellstart: Dashboard starten und Bots verbinden
 
 **Kein Repository-Klon nötig:** Nur beide Compose-Dateien und die
 Konfigurationsvorlage auf den Host herunterladen. Alle folgenden Befehle im
@@ -110,21 +69,113 @@ sudo docker compose -f compose.yml -f compose.production.yml ps
 sudo docker compose -f compose.yml -f compose.production.yml logs --tail=100
 ```
 
-Lokal im Repository entwickeln oder vor dem ersten CI-Image bauen (statt des
-obigen Produktionsstarts):
+Website öffnen: `http://<host-ip>/`, bei anderem Port `http://<host-ip>:8080/`.
+Nur der Web-Port wird veröffentlicht. Caddy erlaubt über `/api/*` ausschließlich
+lesende Zugriffe; Schreibzugriffe gehen direkt an `home-dashboard-api:8000` im
+Docker-Netzwerk und benötigen einen Bot-Token. Bilder werden vom Browser direkt
+von der jeweiligen Rezeptquelle geladen.
+
+Für den Heimnetzbetrieb keine Router-Portweiterleitung einrichten. Bei
+späterem externem Zugriff HTTPS und Zugriffsrechte für das Dashboard ergänzen.
+
+### Recipe Bot verbinden
+
+Bot-Version mit Dashboard-Unterstützung verwenden. In dessen Compose-Datei
+`bot-network` als externes Netzwerk eintragen:
+
+```yaml
+services:
+  recipe-bot:
+    networks: [bot-network]
+networks:
+  bot-network:
+    external: true
+```
+
+In der Umgebungsdatei des Bots setzen:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="derselbe-token-wie-HOME_DASHBOARD_RECIPE_TOKEN"
+```
+
+Anschließend im Verzeichnis der Bot-Compose-Datei `docker compose up -d`
+ausführen, damit der Container mit den neuen Werten neu erstellt wird. Ein
+Neustart allein lädt geänderte `.env`-Werte nicht zuverlässig neu. Der
+Dashboard-Hostname wird durch Docker DNS aufgelöst.
+
+Ab der nächsten manuellen oder automatischen Rezeptauswahl wird ein Snapshot
+übertragen. Kein rückwirkender Import vorhandener Auswahlen. `!bot 0`, neue
+Menüs und Restesonntage ersetzen das zuletzt ausgewählte Rezept nicht. Der Bot
+speichert ausstehende Übertragungen dauerhaft und wiederholt Fehler, ohne
+Telegram zu blockieren. Neue Auswahlen ersetzen ältere offene Übertragungen.
+
+### Household Task Agent verbinden
+
+Für `HouseholdTaskAssignmentAgent` denselben externen Netzwerknamen
+`bot-network` in dessen Compose-Datei eintragen, analog zum Recipe Bot oben. In
+dessen Umgebungsdatei setzen:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="derselbe-token-wie-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
+```
+
+Beide Werte müssen gemeinsam gesetzt oder leer bleiben. Anschließend im
+Verzeichnis der Agent-Compose-Datei `docker compose up -d` ausführen. Nach
+jeder atomaren Tagesbuchung sendet der Agent alle Bewohner mit heute
+tatsächlich zugewiesenen Aufgaben, „fester freier Tag“ oder „keine Aufgabe“.
+Vorab geplante Aufgaben und Monatsstatistiken erscheinen nicht. Fehler
+blockieren weder Telegram noch die nächste Buchung; ausstehende Snapshots
+bleiben über Neustarts erhalten.
+
+## Lokale Entwicklung und Tests
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[test]'
+.venv/bin/python -m unittest discover -s tests -v
+node --test tests/web.test.js
+```
+
+Nach `docker compose build` prüft `python3 tests/smoke_docker.py` echte Container
+einschließlich Caddy und Datenpersistenz. Für lokale Container-Entwicklung oder
+vor dem ersten CI-Image lokal bauen und starten (nutzt `build:` aus
+`compose.yml`, nicht die veröffentlichten Images):
 
 ```bash
 docker compose up -d --build
 ```
 
-Website öffnen: `http://<host-ip>/`, bei anderem Port `http://<host-ip>:8080/`.
-Nur Web-Port wird veröffentlicht. Caddy erlaubt über `/api/*` ausschließlich
-lesende Zugriffe. Schreibzugriffe gehen direkt an `home-dashboard-api:8000`
-im Docker-Netzwerk und benötigen einen Bot-Token.
+## Konfiguration
 
-Für den Heimnetzbetrieb keine Router-Portweiterleitung einrichten. Bei späterem
-externem Zugriff HTTPS und Zugriffsrechte für das Dashboard ergänzen. Bilder
-werden vom Browser direkt von der jeweiligen Rezeptquelle geladen.
+`.env` enthält `HOME_DASHBOARD_RECIPE_TOKEN` und `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT` und
+für Rollbacks `HOME_DASHBOARD_IMAGE_TAG`. Tokens gehören nie in Website-Code.
+
+`web/dashboard-config.json` ist produktiv und verwendet den Live-API-Pfad. Der
+GitHub-Pages-Workflow erstellt ein separates Artefakt, überschreibt diese Datei
+mit `pages/dashboard-config.json` und lädt `pages/demo-state.json` sowie `pages/demo-tasks-state.json`. Produktive
+Container verwenden ausschließlich die Live-Konfiguration.
+
+## Deployment mit Docker
+
+Voraussetzungen: Linux-Host mit ARM64-Architektur und Docker Engine mit
+Compose-Plugin. Veröffentlicht werden `linux/arm64`-Images; lokales Bauen bleibt
+für Entwicklung möglich. Nach jedem Push auf `main` prüft GitHub Actions API,
+Website und Docker-Integration und veröffentlicht beide Container:
+
+```text
+ghcr.io/stfngr/home-dashboard-api:latest
+ghcr.io/stfngr/home-dashboard-api:main
+ghcr.io/stfngr/home-dashboard-api:sha-<commit>
+ghcr.io/stfngr/home-dashboard-web:latest
+ghcr.io/stfngr/home-dashboard-web:main
+ghcr.io/stfngr/home-dashboard-web:sha-<commit>
+```
+
+Nach dem ersten Workflow-Lauf in GitHub unter **Packages** beide Packages auf
+**Public** setzen. Sonst benötigt der Host GitHub-Zugangsdaten zum Pullen.
+Die Erstinstallation ist im Abschnitt „Schnellstart“ oben beschrieben.
 
 ### Aktualisieren und Rollback
 
@@ -160,45 +211,6 @@ bereitgestellt. Einmalig im Repository unter **Settings → Pages** als Quelle
 zeigt nur `pages/demo-state.json` und `pages/demo-tasks-state.json`; sie kann keine aktuellen Heimnetzdaten
 anzeigen. Relative Website-Assets funktionieren sowohl in Pages unter dem
 Projektpfad als auch über Caddy im Container.
-
-## Integrationen
-
-### Recipe Bot
-
-Bot-Version mit Dashboard-Unterstützung bauen bzw. installieren. In seiner
-Umgebungsdatei `/etc/recipe-bot/.env` setzen:
-
-```env
-DASHBOARD_URL="http://home-dashboard-api:8000"
-DASHBOARD_TOKEN="derselbe-token-wie-HOME_DASHBOARD_RECIPE_TOKEN"
-```
-
-Bot-Container neu erstellen: Zum bisherigen `docker run`-Befehl
-`--network bot-network` hinzufügen, dieselben Konfigurations- und State-Mounts
-verwenden. Ein Neustart allein lädt geänderte `--env-file`-Werte nicht neu.
-Der Dashboard-Hostname wird durch Docker DNS aufgelöst.
-
-Ab der nächsten manuellen oder automatischen Rezeptauswahl wird ein Snapshot
-übertragen. Kein rückwirkender Import vorhandener Auswahlen. `!bot 0`, neue
-Menüs und Restesonntage ersetzen das zuletzt ausgewählte Rezept nicht.
-Der Bot speichert ausstehende Übertragungen dauerhaft und wiederholt Fehler,
-ohne Telegram zu blockieren. Neue Auswahlen ersetzen ältere offene Übertragungen.
-
-### Household Task Agent
-
-Für `HouseholdTaskAssignmentAgent` denselben externen Docker-Netzwerknamen
-`bot-network` verwenden. In dessen `.env` setzen:
-
-```env
-DASHBOARD_URL="http://home-dashboard-api:8000"
-DASHBOARD_TOKEN="derselbe-token-wie-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
-```
-
-Beide Werte müssen gemeinsam gesetzt oder leer bleiben. Nach jeder atomaren
-Tagesbuchung sendet der Agent alle Bewohner mit heute tatsächlich zugewiesenen
-Aufgaben, „fester freier Tag“ oder „keine Aufgabe“. Vorab geplante Aufgaben und
-Monatsstatistiken erscheinen nicht. Fehler blockieren weder Telegram noch die
-nächste Buchung; ausstehende Snapshots bleiben über Neustarts erhalten.
 
 ## API-Vertrag
 
@@ -319,46 +331,7 @@ contains no tokens or live data, and never reaches the LAN API.
 Requires Linux ARM64 host. Published images are `linux/arm64`; Docker Engine with
 Compose plugin is the supported runtime.
 
-## Local Development And Tests
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e '.[test]'
-.venv/bin/python -m unittest discover -s tests -v
-node --test tests/web.test.js
-```
-
-After `docker compose build`, `python3 tests/smoke_docker.py` validates actual
-containers including Caddy and persisted state.
-
-## Configuration
-
-`.env` contains `HOME_DASHBOARD_RECIPE_TOKEN` and `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT`,
-and `HOME_DASHBOARD_IMAGE_TAG` for rollback. Never put tokens in website code.
-
-`web/dashboard-config.json` is production configuration and uses the live API
-path. The GitHub Pages workflow creates a separate artifact, replaces it with
-`pages/dashboard-config.json`, and includes `pages/demo-state.json` and `pages/demo-tasks-state.json`. Production
-containers use only the live configuration.
-
-## Deployment With Docker
-
-Each push to `main` runs API, UI, and Docker integration checks in GitHub Actions,
-then publishes:
-
-```text
-ghcr.io/stfngr/home-dashboard-api:latest
-ghcr.io/stfngr/home-dashboard-api:main
-ghcr.io/stfngr/home-dashboard-api:sha-<commit>
-ghcr.io/stfngr/home-dashboard-web:latest
-ghcr.io/stfngr/home-dashboard-web:main
-ghcr.io/stfngr/home-dashboard-web:sha-<commit>
-```
-
-After the first workflow run, open both GitHub **Packages** pages and make the
-packages **Public**, otherwise the host needs GitHub credentials to pull them.
-
-### First Installation With Published Images
+## Quickstart: Start The Dashboard And Connect Bots
 
 **No repository checkout needed:** Download only the two Compose files and the
 environment template onto the host. Run all following commands in the same
@@ -404,20 +377,107 @@ sudo docker compose -f compose.yml -f compose.production.yml ps
 sudo docker compose -f compose.yml -f compose.production.yml logs --tail=100
 ```
 
-For local development in the repository or a local build before CI images exist
-(instead of the production steps above):
+Open `http://<host-ip>/`, or `http://<host-ip>:8080/` with another port. Only the
+web port is published. Caddy allows only read access under `/api/*`. Writes go
+directly to `home-dashboard-api:8000` in the Docker network and need a bot token.
+Browsers load recipe images directly from each recipe source.
+
+Do not configure router port forwarding for LAN use. Add HTTPS and access control
+before exposing the dashboard externally.
+
+### Connect The Recipe Bot
+
+Use the Recipe Bot version with dashboard support. In its Compose file, add
+`bot-network` as an external network:
+
+```yaml
+services:
+  recipe-bot:
+    networks: [bot-network]
+networks:
+  bot-network:
+    external: true
+```
+
+Set these values in the bot's environment file:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_RECIPE_TOKEN"
+```
+
+Then run `docker compose up -d` in the bot's Compose project directory so the
+container is recreated with the new values. A restart alone does not reliably
+reload changed `.env` values. Docker DNS resolves the dashboard hostname.
+
+The next manual or automatic selection sends a recipe snapshot. There is no
+backfill of prior selections. `!bot 0`, new menus, and leftovers Sundays do not
+replace the previously selected recipe. The bot persists pending updates and
+retries failures without blocking Telegram. A newer selection replaces an older
+pending update.
+
+### Connect The Household Task Agent
+
+Use the same external network name `bot-network` for
+`HouseholdTaskAssignmentAgent`, added to its Compose file the same way as the
+Recipe Bot above. Set these values in its environment file:
+
+```env
+DASHBOARD_URL="http://home-dashboard-api:8000"
+DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
+```
+
+Set both values or neither. Then run `docker compose up -d` in the agent's
+Compose project directory. After each atomic daily booking, the agent sends
+all residents with tasks actually booked today, fixed-day-off state, or no
+task. It does not send future plans or monthly statistics. Failures block
+neither Telegram nor the next booking; pending snapshots survive restarts.
+
+## Local Development And Tests
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[test]'
+.venv/bin/python -m unittest discover -s tests -v
+node --test tests/web.test.js
+```
+
+After `docker compose build`, `python3 tests/smoke_docker.py` validates actual
+containers including Caddy and persisted state. For local container
+development, or to build locally before CI images exist (uses `build:` from
+`compose.yml`, not the published images):
 
 ```bash
 docker compose up -d --build
 ```
 
-Open `http://<host-ip>/`, or `http://<host-ip>:8080/` with another port. Only the
-web port is published. Caddy allows only read access under `/api/*`. Writes go
-directly to `home-dashboard-api:8000` in the Docker network and need a bot token.
+## Configuration
 
-Do not configure router port forwarding for LAN use. Add HTTPS and access control
-before exposing the dashboard externally. Browsers load recipe images directly
-from each recipe source.
+`.env` contains `HOME_DASHBOARD_RECIPE_TOKEN` and `HOME_DASHBOARD_HOUSEHOLD_TOKEN`, optional `HOME_DASHBOARD_PORT`,
+and `HOME_DASHBOARD_IMAGE_TAG` for rollback. Never put tokens in website code.
+
+`web/dashboard-config.json` is production configuration and uses the live API
+path. The GitHub Pages workflow creates a separate artifact, replaces it with
+`pages/dashboard-config.json`, and includes `pages/demo-state.json` and `pages/demo-tasks-state.json`. Production
+containers use only the live configuration.
+
+## Deployment With Docker
+
+Each push to `main` runs API, UI, and Docker integration checks in GitHub Actions,
+then publishes:
+
+```text
+ghcr.io/stfngr/home-dashboard-api:latest
+ghcr.io/stfngr/home-dashboard-api:main
+ghcr.io/stfngr/home-dashboard-api:sha-<commit>
+ghcr.io/stfngr/home-dashboard-web:latest
+ghcr.io/stfngr/home-dashboard-web:main
+ghcr.io/stfngr/home-dashboard-web:sha-<commit>
+```
+
+After the first workflow run, open both GitHub **Packages** pages and make the
+packages **Public**, otherwise the host needs GitHub credentials to pull them.
+First installation is described in the "Quickstart" section above.
 
 ### Update And Roll Back
 
@@ -450,44 +510,6 @@ GitHub Pages deploys a separate static artifact on every `main` push. Once, set
 visibly says "DEMO-VERSION" and reads only `pages/demo-state.json` and
 `pages/demo-tasks-state.json`; it cannot show current LAN data. Relative web assets work both below the Pages project
 path and through Caddy in the container.
-
-## Integrations
-
-### Recipe Bot
-
-Build or install the Recipe Bot version with dashboard support. Set these values
-in `/etc/recipe-bot/.env`:
-
-```env
-DASHBOARD_URL="http://home-dashboard-api:8000"
-DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_RECIPE_TOKEN"
-```
-
-Recreate the bot container with `--network bot-network` added to its existing
-`docker run` command, retaining the same configuration and state mounts. A
-restart alone does not reload changed `--env-file` values. Docker DNS resolves
-the dashboard hostname.
-
-The next manual or automatic selection sends a recipe snapshot. There is no
-backfill of prior selections. `!bot 0`, new menus, and leftovers Sundays do not
-replace the previously selected recipe. The bot persists pending updates and
-retries failures without blocking Telegram. A newer selection replaces an older
-pending update.
-
-### Household Task Agent
-
-Use the same external Docker network name `bot-network` for
-`HouseholdTaskAssignmentAgent`. Set these values in its `.env`:
-
-```env
-DASHBOARD_URL="http://home-dashboard-api:8000"
-DASHBOARD_TOKEN="same-token-as-HOME_DASHBOARD_HOUSEHOLD_TOKEN"
-```
-
-Set both values or neither. After each atomic daily booking, the agent sends all
-residents with tasks actually booked today, fixed-day-off state, or no task. It
-does not send future plans or monthly statistics. Failures block neither Telegram
-nor the next booking; pending snapshots survive restarts.
 
 ## API Contract
 
