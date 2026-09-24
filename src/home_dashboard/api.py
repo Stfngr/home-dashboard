@@ -50,7 +50,7 @@ class Recipe(BaseModel):
 
 class RecipePayload(BaseModel):
     date: str
-    automatic: bool = Field(strict=True)
+    automatic: bool = Field(default=False, strict=True)
     recipe: Recipe
 
     @field_validator("date")

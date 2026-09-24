@@ -59,6 +59,11 @@ class APITests(unittest.TestCase):
             self.assertEqual(response.json()["payload"], update()["payload"])
             self.assertEqual(response.headers["cache-control"], "no-store")
 
+    def test_recipe_payload_without_automatic_is_accepted(self):
+        payload = update()
+        del payload["payload"]["automatic"]
+        self.assertEqual(self.client.put(URL, json=payload, headers=self.auth).json(), {"applied": True})
+
     def test_concurrent_updates_keep_newest(self):
         with ThreadPoolExecutor(max_workers=4) as pool:
             responses = list(pool.map(lambda day: self.client.put(URL, json=update(day), headers=self.auth),
